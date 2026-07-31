@@ -16,6 +16,34 @@ final class DiningViewModel: ObservableObject {
     @Published var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @Published var selectedHall: DiningHall = DiningHall.all[0]
 
+    /// Diet chips the user has switched on; an item must satisfy all of them.
+    @Published var activeDiets: Set<DietaryTag> = []
+
+    func items(in period: MenuPeriod) -> [MenuItem] {
+        guard !activeDiets.isEmpty else { return period.items }
+        return period.items.filter { activeDiets.isSubset(of: $0.tags) }
+    }
+
+    /// Every dish across every hall whose name matches `query`, grouped by hall
+    /// (dining commons first), honoring the active diet chips.
+    func dishSections(matching query: String) -> [(hall: DiningHall, hits: [DishHit])] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+
+        var sections: [(DiningHall, [DishHit])] = []
+        for hall in DiningHall.all {
+            guard let location = location(for: hall) else { continue }
+            var hits: [DishHit] = []
+            for period in location.labeledPeriods {
+                for item in items(in: period.period) where item.name.lowercased().contains(q) {
+                    hits.append(DishHit(item: item, hall: hall, meal: period.label))
+                }
+            }
+            if !hits.isEmpty { sections.append((hall, hits)) }
+        }
+        return sections
+    }
+
     // MARK: Lookups
 
     func location(for hall: DiningHall) -> DiningLocation? {
@@ -71,6 +99,15 @@ final class DiningViewModel: ObservableObject {
     }
 }
 
+/// A single matching dish from a cross-hall search: the dish, which hall it's
+/// at, and which meal it's served in.
+struct DishHit: Identifiable, Hashable {
+    let id = UUID()
+    let item: MenuItem
+    let hall: DiningHall
+    let meal: String
+}
+
 // MARK: - Picker screen
 
 struct DiningView: View {
@@ -79,42 +116,22 @@ struct DiningView: View {
     @State private var showingDiagnostics = false
     @State private var searchText = ""
 
-    /// Halls matching the search box, dining commons kept first (that's the
-    /// order DiningHall.all is already in).
-    private var filteredHalls: [DiningHall] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return DiningHall.all }
-        return DiningHall.all.filter { $0.name.lowercased().contains(query) }
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Picker("Day", selection: $model.selectedDate) {
-                        ForEach(model.selectableDates, id: \.self) { date in
-                            Text(DiningViewModel.label(for: date)).tag(date)
-                        }
-                    }
-                }
-
-                Section {
-                    ForEach(filteredHalls) { hall in
-                        Button {
-                            model.selectedHall = hall
-                            showingMenu = true
-                        } label: {
-                            hallCard(for: hall)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } footer: {
-                    Text("Tap a hall to see every meal it's serving on \(model.dateLabel.lowercased()).")
+                if isSearching {
+                    searchResults
+                } else {
+                    hallBrowser
                 }
             }
             .navigationTitle("Dining")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search dining halls")
+            .searchable(text: $searchText, prompt: "Search dishes across halls")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -147,6 +164,91 @@ struct DiningView: View {
                 if model.locations.isEmpty { await model.load() }
             }
         }
+    }
+
+    // MARK: Hall browser
+
+    @ViewBuilder
+    private var hallBrowser: some View {
+        Section {
+            Picker("Day", selection: $model.selectedDate) {
+                ForEach(model.selectableDates, id: \.self) { date in
+                    Text(DiningViewModel.label(for: date)).tag(date)
+                }
+            }
+        }
+
+        Section {
+            ForEach(DiningHall.all) { hall in
+                Button {
+                    model.selectedHall = hall
+                    showingMenu = true
+                } label: {
+                    hallCard(for: hall)
+                }
+                .buttonStyle(.plain)
+            }
+        } footer: {
+            Text("Tap a hall to see every meal it's serving on \(model.dateLabel.lowercased()).")
+        }
+    }
+
+    // MARK: Cross-hall search
+
+    @ViewBuilder
+    private var searchResults: some View {
+        let sections = model.dishSections(matching: searchText)
+
+        if model.locations.isEmpty && model.isLoading {
+            Section { ProgressView("Loading menus") }
+        } else if sections.isEmpty {
+            Section {
+                Text("No dishes match “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))” on \(model.dateLabel.lowercased()).")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            ForEach(sections, id: \.hall.id) { section in
+                Section {
+                    ForEach(section.hits) { hit in
+                        Button {
+                            model.selectedHall = hit.hall
+                            showingMenu = true
+                        } label: {
+                            dishHitRow(hit)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text(section.hall.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.heading)
+                        .textCase(nil)
+                }
+            }
+        }
+    }
+
+    private func dishHitRow(_ hit: DishHit) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(hit.item.name)
+                    .font(.subheadline)
+                Spacer(minLength: 8)
+                Text(hit.meal)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Theme.californiaGold)
+            }
+
+            if !hit.item.diets.isEmpty || hit.item.carbon != nil {
+                HStack(spacing: 6) {
+                    ForEach(hit.item.diets) { DietBadge(tag: $0) }
+                    if let carbon = hit.item.carbon { CarbonBadge(rating: carbon) }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 
     // MARK: Hall card
@@ -265,19 +367,70 @@ struct MenuResultView: View {
 
     private var menuList: some View {
         List {
+            Section {
+                dietFilterBar
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                    .listRowBackground(Color.clear)
+            }
+
             ForEach(periods) { entry in
-                Section {
-                    ForEach(entry.period.items, id: \.self) { item in
-                        Text(item).font(.subheadline)
+                let items = model.items(in: entry.period)
+                if !items.isEmpty {
+                    Section {
+                        ForEach(items) { item in
+                            MenuItemRow(item: item)
+                        }
+                    } header: {
+                        HStack(spacing: 6) {
+                            Image(systemName: entry.symbol)
+                            Text(entry.label)
+                            Spacer()
+                            Text("\(items.count)")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.heading)
+                        .textCase(nil)
                     }
-                } header: {
-                    HStack(spacing: 6) {
-                        Image(systemName: entry.symbol)
-                        Text(entry.label)
+                }
+            }
+
+            if noItemsAfterFilter {
+                Text("Nothing here matches those filters.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// True when a filter is on and it's hidden every dish in every period.
+    private var noItemsAfterFilter: Bool {
+        !model.activeDiets.isEmpty
+            && periods.allSatisfy { model.items(in: $0.period).isEmpty }
+    }
+
+    private var dietFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(DietaryTag.diets) { diet in
+                    let isOn = model.activeDiets.contains(diet)
+                    Button {
+                        if isOn { model.activeDiets.remove(diet) }
+                        else { model.activeDiets.insert(diet) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: diet.symbol).font(.system(size: 10))
+                            Text(diet.label)
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule().fill(isOn ? Theme.control : Color.primary.opacity(0.10))
+                        )
+                        .foregroundStyle(isOn ? .white : .primary)
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.heading)
-                    .textCase(nil)
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -364,6 +517,88 @@ struct MenuResultView: View {
         }
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Menu item row
+
+struct MenuItemRow: View {
+    let item: MenuItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.name)
+                .font(.subheadline)
+
+            if !item.diets.isEmpty || item.carbon != nil || !item.allergens.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(item.diets) { DietBadge(tag: $0) }
+                    if let carbon = item.carbon { CarbonBadge(rating: carbon) }
+                    if !item.allergens.isEmpty {
+                        Label(item.allergens.map(\.label).joined(separator: ", "),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+struct DietBadge: View {
+    let tag: DietaryTag
+
+    private var color: Color {
+        switch tag {
+        case .vegan, .vegetarian: return .green
+        case .halal, .kosher: return Theme.lawrence
+        default: return .gray
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: tag.symbol).font(.system(size: 9))
+            Text(tag.label).font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.22)))
+        .foregroundStyle(color)
+    }
+}
+
+struct CarbonBadge: View {
+    let rating: CarbonRating
+
+    private var color: Color {
+        switch rating {
+        case .low: return .green
+        case .med: return .yellow
+        case .high: return .orange
+        }
+    }
+
+    private var text: String {
+        switch rating {
+        case .low: return "Low CO₂"
+        case .med: return "Med CO₂"
+        case .high: return "High CO₂"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "leaf.fill").font(.system(size: 9))
+            Text(text).font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.20)))
+        .foregroundStyle(color)
     }
 }
 
