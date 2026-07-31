@@ -106,7 +106,7 @@ struct GymView: View {
             HStack(spacing: 8) {
                 Image(systemName: "dumbbell.fill")
                     .foregroundStyle(Theme.californiaGold)
-                Text("Weight room right now")
+                Text("Crowd Meter")
                     .font(.headline)
                     .foregroundStyle(Theme.heading)
             }
