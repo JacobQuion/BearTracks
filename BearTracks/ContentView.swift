@@ -20,9 +20,19 @@ struct ContentView: View {
                     Label("Dining", systemImage: "fork.knife")
                 }
 
+            LibraryView()
+                .tabItem {
+                    Label("Library", systemImage: "books.vertical")
+                }
+
             GymView()
                 .tabItem {
                     Label("Gym", systemImage: "dumbbell")
+                }
+
+            GameView()
+                .tabItem {
+                    Label("Game", systemImage: "gamecontroller.fill")
                 }
         }
         .tint(Theme.californiaGold)
