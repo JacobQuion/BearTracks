@@ -15,12 +15,12 @@ final class EventsViewModel: ObservableObject {
 
     @Published var searchText = ""
     @Published var selectedType: String?
-    @Published var range: EventRange = .week
+    @Published var range: EventRange = .everything
 
     enum EventRange: String, CaseIterable, Identifiable {
+        case everything = "All Events"
         case today = "Today"
-        case week = "This week"
-        case all = "Near future"
+        case all = "Near Future"
 
         var id: String { rawValue }
     }
@@ -37,14 +37,15 @@ final class EventsViewModel: ObservableObject {
         let today = calendar.startOfDay(for: Date())
 
         switch range {
+        case .everything:
+            // Everything from today onward.
+            result = result.filter { $0.day >= today }
         case .today:
             result = result.filter { calendar.isDate($0.day, inSameDayAs: today) }
-        case .week:
-            if let cutoff = calendar.date(byAdding: .day, value: 7, to: today) {
-                result = result.filter { $0.day >= today && $0.day < cutoff }
-            }
         case .all:
-            result = result.filter { $0.day >= today }
+            // "Near Future" is everything from tomorrow on, so today's events
+            // drop out.
+            result = result.filter { $0.day > today }
         }
 
         if let selectedType {
@@ -105,17 +106,20 @@ struct EventsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if model.isLoading && model.events.isEmpty {
-                    ProgressView("Loading campus events")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let message = model.errorMessage {
-                    errorState(message)
-                } else {
-                    eventList
+            VStack(spacing: 0) {
+                typeBar
+
+                Group {
+                    if model.isLoading && model.events.isEmpty {
+                        ProgressView("Loading campus events")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let message = model.errorMessage {
+                        errorState(message)
+                    } else {
+                        eventList
+                    }
                 }
             }
-            .safeAreaInset(edge: .top) { typeBar }
             .navigationTitle("Campus Events")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $model.searchText, prompt: "Search events")
@@ -155,25 +159,26 @@ struct EventsView: View {
 
     // MARK: - Category filter
 
-    @ViewBuilder
+    // Rendered from first layout (not gated on the events load) so the bar and
+    // its "All" chip are present and tappable the moment the tab opens; the
+    // category chips fill in as soon as the feed arrives. Inserting this inset
+    // only after the fetch is what previously ate the first taps.
     private var typeBar: some View {
-        if !model.availableTypes.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    chip(title: "All", isSelected: model.selectedType == nil) {
-                        model.selectedType = nil
-                    }
-                    ForEach(model.availableTypes, id: \.self) { type in
-                        chip(title: type, isSelected: model.selectedType == type) {
-                            model.selectedType = model.selectedType == type ? nil : type
-                        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(title: "All", isSelected: model.selectedType == nil) {
+                    model.selectedType = nil
+                }
+                ForEach(model.availableTypes, id: \.self) { type in
+                    chip(title: type, isSelected: model.selectedType == type) {
+                        model.selectedType = model.selectedType == type ? nil : type
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
             }
-            .background(.bar)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
+        .background(.bar)
     }
 
     private func chip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -269,6 +274,8 @@ struct EventRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                    Text(event.shortDateText)
                     Image(systemName: "clock")
                     Text(event.timeText)
                     if event.isOnline {

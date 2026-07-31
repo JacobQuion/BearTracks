@@ -56,6 +56,15 @@ struct CampusEvent: Identifiable, Hashable {
         return startText
     }
 
+    /// Short month and day, e.g. "Jul 31", in Berkeley's timezone.
+    var shortDateText: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        f.dateFormat = "MMM d"
+        return f.string(from: start)
+    }
+
     /// Midnight in Berkeley's timezone, used to group events into days.
     var day: Date {
         var calendar = Calendar(identifier: .gregorian)
