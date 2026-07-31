@@ -70,10 +70,119 @@ enum MealKind: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Dietary tags
+
+/// Every diet/allergen marker Cal Dining puts on a dish, plus the carbon
+/// rating. Sourced from the CSS classes and icons on each menu `<li>`.
+enum DietaryTag: String, CaseIterable, Identifiable, Hashable {
+    // Diets / preferences
+    case vegan, vegetarian, halal, kosher
+    // Allergens
+    case dairy, egg, fish, gluten, peanut, sesame, shellfish, soy, treenut, wheat, pork, alcohol
+
+    var id: String { rawValue }
+
+    /// True for the "I want to eat this" markers, as opposed to allergens.
+    var isDiet: Bool {
+        switch self {
+        case .vegan, .vegetarian, .halal, .kosher: return true
+        default: return false
+        }
+    }
+
+    /// Maps a raw class token from a menu `<li class="recip …">` to a tag.
+    /// Cal Dining's class names don't always match their icon names, so both
+    /// spellings are accepted.
+    init?(className: String) {
+        switch className.lowercased() {
+        case "vegan-option", "vegan": self = .vegan
+        case "vegetarian-option", "vegetarian": self = .vegetarian
+        case "halal": self = .halal
+        case "kosher": self = .kosher
+        case "milk", "dairy": self = .dairy
+        case "egg": self = .egg
+        case "fish": self = .fish
+        case "gluten": self = .gluten
+        case "peanuts", "peanut": self = .peanut
+        case "sesame": self = .sesame
+        case "shellfish", "shell": self = .shellfish
+        case "soybeans", "soy": self = .soy
+        case "tree-nuts", "treenut": self = .treenut
+        case "wheat": self = .wheat
+        case "pork": self = .pork
+        case "alcohol": self = .alcohol
+        default: return nil
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .vegan: return "Vegan"
+        case .vegetarian: return "Vegetarian"
+        case .halal: return "Halal"
+        case .kosher: return "Kosher"
+        case .dairy: return "Dairy"
+        case .egg: return "Egg"
+        case .fish: return "Fish"
+        case .gluten: return "Gluten"
+        case .peanut: return "Peanut"
+        case .sesame: return "Sesame"
+        case .shellfish: return "Shellfish"
+        case .soy: return "Soy"
+        case .treenut: return "Tree Nut"
+        case .wheat: return "Wheat"
+        case .pork: return "Pork"
+        case .alcohol: return "Alcohol"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .vegan: return "leaf.fill"
+        case .vegetarian: return "leaf"
+        case .halal: return "moon.stars.fill"
+        case .kosher: return "star.fill"
+        default: return "exclamationmark.triangle"
+        }
+    }
+
+    static let diets: [DietaryTag] = allCases.filter(\.isDiet)
+    static let allergens: [DietaryTag] = allCases.filter { !$0.isDiet }
+}
+
+/// Cal Dining's carbon-footprint rating for a dish.
+enum CarbonRating: String, Hashable {
+    case low, med, high
+
+    var label: String {
+        switch self {
+        case .low: return "Low carbon"
+        case .med: return "Medium carbon"
+        case .high: return "High carbon"
+        }
+    }
+}
+
+// MARK: - Menu item
+
+struct MenuItem: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let tags: Set<DietaryTag>
+    let carbon: CarbonRating?
+    /// Keys for the nutrition lookup (Cal Dining's get_recipe_details AJAX).
+    let location: String
+    let recipeId: String
+    let menuId: String
+
+    var diets: [DietaryTag] { DietaryTag.diets.filter { tags.contains($0) } }
+    var allergens: [DietaryTag] { DietaryTag.allergens.filter { tags.contains($0) } }
+}
+
 struct MenuPeriod: Identifiable, Hashable {
     let id = UUID()
     let name: String
-    let items: [String]
+    let items: [MenuItem]
 
     var kind: MealKind { MealKind(periodName: name) }
 
@@ -471,9 +580,11 @@ struct DiningService {
             .trimmingCharacters(in: .whitespaces)
     }
 
-    /// Pulls the dish names out of `<div class="recip"><span>Name</span>...`.
-    private static func recipeItems(in html: String) -> [String] {
-        let pattern = "class\\s*=\\s*[\"'][^\"']*\\brecip\\b[^\"']*[\"'][^>]*>\\s*<span[^>]*>([^<]{2,120})</span>"
+    /// Pulls each dish out of `<li class="recip …" data-id=… data-menuid=…>
+    /// <span>Name</span> …icons… </li>`, capturing its dietary tags, carbon
+    /// rating and the keys needed to look up full nutrition later.
+    private static func recipeItems(in html: String) -> [MenuItem] {
+        let pattern = "<li class=\"(recip[^\"]*)\"([^>]*)>\\s*<span[^>]*>([^<]{1,160})</span>(.*?)</li>"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
             return []
         }
@@ -482,15 +593,44 @@ struct DiningService {
         let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
 
         var seen = Set<String>()
-        var items: [String] = []
+        var items: [MenuItem] = []
         for match in matches {
-            let raw = ns.substring(with: match.range(at: 1))
-            let name = decodeEntities(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            let classList = ns.substring(with: match.range(at: 1))
+            let attributes = ns.substring(with: match.range(at: 2))
+            let rawName = ns.substring(with: match.range(at: 3))
+            let rest = ns.substring(with: match.range(at: 4))
+
+            let name = decodeEntities(rawName).trimmingCharacters(in: .whitespacesAndNewlines)
             guard name.count > 1, !seen.contains(name.lowercased()) else { continue }
             seen.insert(name.lowercased())
-            items.append(name)
+
+            let tags = Set(classList.split(separator: " ").compactMap { DietaryTag(className: String($0)) })
+            let carbon = firstMatch(in: rest, pattern: "green_image/(low|med|high)\\.png")
+                .flatMap { CarbonRating(rawValue: $0.lowercased()) }
+
+            items.append(MenuItem(
+                name: name,
+                tags: tags,
+                carbon: carbon,
+                location: attributeValue("data-location", in: attributes) ?? "",
+                recipeId: attributeValue("data-id", in: attributes) ?? "",
+                menuId: attributeValue("data-menuid", in: attributes) ?? ""
+            ))
         }
         return items
+    }
+
+    private static func attributeValue(_ name: String, in attributes: String) -> String? {
+        firstMatch(in: attributes, pattern: "\(name)=\"([^\"]*)\"")
+    }
+
+    /// First capture group of `pattern` in `text`, or nil.
+    private static func firstMatch(in text: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1))
     }
 
     private static func decodeEntities(_ text: String) -> String {
