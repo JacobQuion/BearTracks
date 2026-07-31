@@ -246,19 +246,39 @@ struct DiningHall: Identifiable, Hashable {
     let id: String
     let name: String
     let isResidential: Bool
+    /// A promo photo of the location, pulled from Cal Dining's own site.
+    let imageURL: URL?
+    /// An asset-catalog image to use instead of `imageURL`, when we've bundled
+    /// a specific photo for this hall.
+    var assetName: String? = nil
+
+    private static func image(_ path: String) -> URL? {
+        URL(string: "https://dining.berkeley.edu/wp-content/uploads/\(path)")
+    }
 
     static let all: [DiningHall] = [
-        .init(id: "crossroads", name: "Crossroads", isResidential: true),
-        .init(id: "cafe3", name: "Café 3", isResidential: true),
-        .init(id: "clarkkerr", name: "Clark Kerr Campus", isResidential: true),
-        .init(id: "foothill", name: "Foothill", isResidential: true),
-        .init(id: "goldenbear", name: "The Golden Bear Café", isResidential: false),
-        .init(id: "studentunion", name: "The Eateries at Student Union", isResidential: false),
-        .init(id: "browns", name: "Brown's", isResidential: false),
-        .init(id: "bearmarket", name: "Bear Market", isResidential: false),
-        .init(id: "cubmarket", name: "Cub Market", isResidential: false),
-        .init(id: "localxdesign", name: "Local x Design", isResidential: false),
-        .init(id: "theden", name: "The Den", isResidential: false)
+        .init(id: "crossroads", name: "Crossroads", isResidential: true,
+              imageURL: nil, assetName: "CrossroadsBanner"),
+        .init(id: "cafe3", name: "Café 3", isResidential: true,
+              imageURL: image("2024/01/dining-commons-slide-cafe3-1.jpg")),
+        .init(id: "clarkkerr", name: "Clark Kerr Campus", isResidential: true,
+              imageURL: image("2024/01/dining-commons-slide-ck-1.jpg")),
+        .init(id: "foothill", name: "Foothill", isResidential: true,
+              imageURL: nil, assetName: "FoothillBanner"),
+        .init(id: "goldenbear", name: "The Golden Bear Café", isResidential: false,
+              imageURL: image("2025/01/restaurants-slide-gbc-1-scaled-700x400.jpg")),
+        .init(id: "studentunion", name: "The Eateries at Student Union", isResidential: false,
+              imageURL: image("2024/11/restaurants-slide-eateries-1.jpg")),
+        .init(id: "browns", name: "Brown's", isResidential: false,
+              imageURL: image("2025/01/restaurants-slide-browns-1-scaled-700x400.jpg")),
+        .init(id: "bearmarket", name: "Bear Market", isResidential: false,
+              imageURL: image("4.15.26_UCDining1012-bearMarket1-700x400.jpg")),
+        .init(id: "cubmarket", name: "Cub Market", isResidential: false,
+              imageURL: image("4.15.26_UCDining3135-cubMarket1-700x400.jpg")),
+        .init(id: "localxdesign", name: "Local x Design", isResidential: false,
+              imageURL: image("2024/11/restaurants-slide-local-1.jpg")),
+        .init(id: "theden", name: "The Den", isResidential: false,
+              imageURL: image("4.15.26_UCDining2033-den1-700x400.jpg"))
     ]
 
     /// Loose comparison so "Clark_Kerr_Campus" from the page matches "Clark Kerr Campus".

@@ -77,70 +77,44 @@ struct DiningView: View {
     @StateObject private var model = DiningViewModel()
     @State private var showingMenu = false
     @State private var showingDiagnostics = false
+    @State private var searchText = ""
+
+    /// Halls matching the search box, dining commons kept first (that's the
+    /// order DiningHall.all is already in).
+    private var filteredHalls: [DiningHall] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return DiningHall.all }
+        return DiningHall.all.filter { $0.name.lowercased().contains(query) }
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
+            List {
                 Section {
                     Picker("Day", selection: $model.selectedDate) {
                         ForEach(model.selectableDates, id: \.self) { date in
                             Text(DiningViewModel.label(for: date)).tag(date)
                         }
                     }
-
-                    // One flat list so every location shows, dining commons
-                    // first and then the cafés and markets.
-                    Picker("Location", selection: $model.selectedHall) {
-                        ForEach(DiningHall.all) { hall in
-                            Text(hall.name).tag(hall)
-                        }
-                    }
-
-                } header: {
-                    Text("What and when")
-                } footer: {
-                    Text("Pick a day and a location, then search. You'll get every meal that location is serving.")
                 }
 
                 Section {
-                    Button {
-                        showingMenu = true
-                        Task { await model.load() }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            if model.isLoading {
-                                ProgressView().padding(.trailing, 6)
-                            }
-                            Label("Search", systemImage: "magnifyingglass")
-                                .font(.headline)
-                            Spacer()
+                    ForEach(filteredHalls) { hall in
+                        Button {
+                            model.selectedHall = hall
+                            showingMenu = true
+                        } label: {
+                            hallCard(for: hall)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .disabled(model.isLoading)
-                }
-
-                if !model.locations.isEmpty {
-                    Section {
-                        ForEach(model.hallsWithMenus) { hall in
-                            HStack {
-                                Text(hall.name)
-                                    .font(.subheadline)
-                                Spacer()
-                                Text(mealSummary(for: hall))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    } header: {
-                        Text("Posted right now")
-                    } footer: {
-                        Text("Cal Dining only publishes menus for locations that are open. Over breaks and summer that's usually just the dining commons, and often brunch and dinner only.")
-                    }
+                } footer: {
+                    Text("Tap a hall to see every meal it's serving on \(model.dateLabel.lowercased()).")
                 }
             }
             .navigationTitle("Dining")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search dining halls")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -165,14 +139,91 @@ struct DiningView: View {
             .sheet(isPresented: $showingDiagnostics) {
                 DiagnosticsView(text: model.diagnostics.summary)
             }
+            .refreshable { await model.load() }
+            .onChange(of: model.selectedDate) { _, _ in
+                Task { await model.load() }
+            }
             .task {
                 if model.locations.isEmpty { await model.load() }
             }
         }
     }
 
-    private func mealSummary(for hall: DiningHall) -> String {
-        model.location(for: hall)?.mealSummary ?? ""
+    // MARK: Hall card
+
+    private func hallCard(for hall: DiningHall) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DiningImage(url: hall.imageURL, assetName: hall.assetName, height: 130)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hall.name)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle(for: hall))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// What to show under the hall name: the meals it's serving today, or a
+    /// gentle note when nothing's posted.
+    private func subtitle(for hall: DiningHall) -> String {
+        if model.isLoading && model.locations.isEmpty { return "Loading menu…" }
+        if let summary = model.location(for: hall)?.mealSummary, !summary.isEmpty {
+            return summary
+        }
+        return "No menu posted"
+    }
+}
+
+// MARK: - Image
+
+/// A hall photo cropped to a uniform size, mirroring the Library tab's cards.
+struct DiningImage: View {
+    let url: URL?
+    var assetName: String? = nil
+    let height: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.card)
+            .frame(height: height)
+            .overlay {
+                if let assetName {
+                    Image(assetName)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .empty:
+                            ProgressView()
+                        default:
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 30))
+                                .foregroundStyle(Theme.californiaGold.opacity(0.6))
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
     }
 }
 
