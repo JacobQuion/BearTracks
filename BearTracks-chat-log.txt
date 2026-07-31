@@ -1,0 +1,628 @@
+===============================================================================
+BEARTRACKS - BUILD LOG
+A conversation between Jacob Quion and Claude
+Thursday, July 30, 2026
+===============================================================================
+
+Project: BearTracks, an all-in-one campus app for UC Berkeley
+Location: ~/Desktop/iOS Apps/BearTracks
+Final tabs: Events, Dining, Gym
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+how would i go about making an ios app with you?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Short version: I write the Swift code, you run it in Xcode.
+
+WHAT YOU NEED
+- A Mac with Xcode installed (free from the Mac App Store)
+- An Apple ID. Free tier lets you run your app on your own iPhone with a 7-day
+  expiry. $99/year Apple Developer account is only needed to ship to the App Store
+- A folder on your Mac that you connect to me, so I can write files directly into
+  your project
+
+HOW THE LOOP WORKS
+1. You tell me what the app does
+2. I scaffold a SwiftUI project and write the files into your folder
+3. You hit Run in Xcode and tell me what breaks or looks wrong
+4. I edit the files, you re-run
+
+One real limitation: my shell is Linux, so I can't compile or run the app myself.
+I can't see the simulator either. That means you're my eyes for build errors and
+UI feedback. Paste error text or screenshots back to me and it goes fast.
+
+Two things that make this smoother:
+- Start with something small and real. A single-screen app with local data storage
+  beats a multi-screen app with accounts and a backend as a first build
+- If the app grows past a few dozen files, Claude Code in the terminal is the
+  better tool since it can actually run xcodebuild and read the errors itself
+
+What do you want the app to do? Once I know that I can tell you whether it's a
+weekend build or a month.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+please summarize what i have to do in a few bullet points
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+- Install Xcode from the Mac App Store and sign in with your free Apple ID
+- Connect a folder on your Mac to me so I can write project files into it
+- Tell me what the app should do
+- Hit Run in Xcode after I write code, then paste back any errors or screenshots
+- Repeat until it works
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok so i already installed x code ... now what do i do next
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+[Requested folder access. Jacob connected ~/Desktop/iOS Apps/BearTracks, which
+already contained a BearTracks Xcode project with the default SwiftUI template
+and one commit.]
+
+You're further along than I thought. There's already a BearTracks Xcode project
+in that folder with the default SwiftUI template and one commit.
+
+[Asked what the app should do, and whether to build a full v1 or go one screen
+at a time.]
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+I want to make an all in 1 campus navigation app for UC Berkeley ... let's start
+off simple with 2 feature
+
+crime alerts and dining hall menus
+
+crime alerts: make a map where users can see recent crime in the area
+dining hall menus: pull data from the uc berkeley dining hall for what meal
+options are being served where
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+[Researched data sources, then wrote 8 Swift files into the project.]
+
+Wrote 8 files into your BearTracks project. Your project uses Xcode's
+synchronized folders, so they're already part of the target. Just open
+BearTracks.xcodeproj and hit Run.
+
+WHAT'S THERE
+- Safety tab: a map centered on campus with color-coded pins by category, a
+  7/30/90 day filter, tappable pins with offense, address and time. Data is live
+  from Berkeley's open data portal (Socrata), filtered to a 2.5km radius around
+  the Campanile.
+- Dining tab: the four dining commons with today's meal periods and items, pulled
+  from dining.berkeley.edu.
+
+ONE THING YOU SHOULD KNOW
+Cal Dining has no JSON API, so the dining feature reads their HTML directly. I
+confirmed the structure from a working scraper but couldn't hit their site from
+my sandbox to verify it's still current.
+
+I deliberately left out location permissions for v1 so nothing blocks your first
+build. Once it runs, "show my location on the map" is the natural next add.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok now how do i view this on my x code thing
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Open it and run it:
+
+1. Finder > Desktop > iOS Apps > BearTracks > double-click BearTracks.xcodeproj
+2. In the toolbar at the top, click the device dropdown (next to the "BearTracks"
+   scheme name) and pick any iPhone simulator
+3. Press Cmd-R or the play button
+4. First build takes a minute or two. The Simulator app opens on its own and
+   launches BearTracks
+
+If the build fails: Xcode shows a red banner at the top and lists errors in the
+left sidebar. Select the errors, copy them, and paste them here.
+
+If it builds but looks wrong: Cmd-S in the Simulator saves a screenshot to your
+Desktop. Drop it in the chat.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+[Screenshot of 12 Xcode errors: "Type 'CrimeViewModel' does not conform to
+protocol 'ObservableObject'", "Initializer 'init(wrappedValue:)' is not available
+due to missing import of defining module 'Combine'", etc.]
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Classic one. ObservableObject and @Published come from Combine, which SwiftUI no
+longer auto-imports in the newer SDK.
+
+Added import Combine to both view files. Hit Cmd-R again.
+
+All 12 errors trace back to that one missing import, so they should clear
+together.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+so how do i click around the app
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+In the Simulator, your trackpad/mouse cursor is your finger. Click = tap.
+
+GETTING AROUND BEARTRACKS
+- Bottom of the screen has two tabs, Safety and Dining. Click either one to switch.
+- On the map: click and drag to pan, pinch on the trackpad to zoom. Click a
+  colored dot to pull up the incident details.
+- The colored pills near the bottom are toggles for hiding categories.
+- Top right has a menu for the 7/30/90 day range.
+- On Dining: click a hall to see its menu, then the back arrow to return.
+
+SIMULATOR SHORTCUTS
+- Cmd-Shift-H goes to the home screen
+- Cmd-K toggles the software keyboard
+- Cmd-1 through Cmd-5 scales the window
+- Cmd-S saves a screenshot to your Desktop
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+yeah the app built clean
+
+but the map has no alerts
+
+and the dining hall is only showing 2 dining halls ... i want to see breakfast
+lunch and dinner with all the locations
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+[Made both features more forgiving.]
+
+WHAT CHANGED ON THE MAP
+I was filtering by date on the server, so if Berkeley's feed has gone stale, you
+got an empty map with no explanation. Now it pulls the newest 3000 records
+regardless of date, filters on device, and if nothing is recent it shows the
+newest available data with a banner telling you the actual date. Radius went from
+2.5km to 4km with a "Near campus only" toggle.
+
+Dining now shows all locations instead of just the four dining commons.
+
+That said, only 2 halls parsing means Cal Dining's page markup probably drifted.
+Rather than guess, let me look at the real thing:
+
+  cd "~/Desktop/iOS Apps/BearTracks" && curl -sL https://dining.berkeley.edu/menus/
+  > dining-debug.html && curl -s
+  'https://data.cityofberkeley.info/resource/k2nh-s5h5.json?$limit=3'
+  > crime-debug.json && echo done
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+what do i have to do before i run the app?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Nothing. Just Cmd-R in Xcode.
+
+I already saved the changes to your files, so Xcode picks them up on the next
+build. No cleaning, no settings to change.
+
+The Terminal command is separate and optional right now. It doesn't affect the
+build.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok 2 things
+
+* the app says berkeleys open data server returned status 403, so the map still
+  doesnt work
+* let me able to select which day and meal i want on the dining halls
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Dining now has a day picker in the top left and a row of meal pills under the nav
+bar. The pills are built from whatever periods Cal Dining actually returns, so
+"Spring - Brunch" gets bucketed as Brunch automatically.
+
+On the 403: I set a browser user agent on the request. Socrata sits behind a WAF
+that rejects URLSession's default agent, and that's the most common cause of a
+clean 403 on an otherwise public dataset.
+
+If it still 403s, the dataset itself has probably been locked down or moved, and
+I'd be guessing from here. Right now I'm fixing by inference. With those debug
+files I'd be fixing by looking.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+1) the map still isn't working
+2) for dining, have me select what day and then the dining hall, i can only see
+   clark
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+[Checked whether the Chrome extension was connected so I could inspect the pages
+myself. It wasn't.]
+
+No Chrome extension connected, so I can't reach the data myself. Building the
+diagnostics into the app instead so you can just read the answer off the screen.
+
+Dining now works the way you asked. Day picker in the top left, dining halls as
+pills across the top, and picking a hall shows its breakfast, lunch and dinner as
+separate sections.
+
+Why you only see Clark: the parser is finding one location where there should be
+nine or ten. I built a Diagnostics screen into the app. Tap the three dots in the
+top right of Dining, then Diagnostics. It shows the page size, how many location
+and meal markers exist in the raw HTML, and the actual CSS class names Cal Dining
+is using.
+
+Crime map now puts the server's own error text in the message instead of just the
+status code.
+
+I know I keep asking for data instead of just fixing it. It's because I can't
+reach either site from here, and the last two fixes were educated guesses that
+clearly didn't land. This screen puts the ground truth in front of both of us.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+so should both work now?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+No. Be clear on what this build is.
+
+The dining UI is fixed, so you'll get the day picker and hall pills and meals
+split into sections. But the parser is unchanged, so you'll still only see Clark.
+And the map will still fail, since my user agent theory already came back wrong.
+
+This build is instrumentation, not a fix. The only new thing is that both tabs
+can now tell me why they're failing instead of just failing.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok the map isn't working ... let's just scratch that feature ... how about we
+replace that with current events happening on campus?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+[Discovered events.berkeley.edu runs LiveWhale, not Localist. Found the public
+JSON feed and confirmed every field against live data.]
+
+Crime feature deleted, Events built in its place.
+
+THIS ONE I ACTUALLY VERIFIED. events.berkeley.edu runs LiveWhale, which has a
+real public JSON feed. I pulled it live and confirmed every field against actual
+data. 1,371 events in the feed, correctly dated. The reason my earlier guesses
+kept missing is that Berkeley's crime portal and Cal Dining were both unreachable
+from my sandbox, so I was writing code against documentation instead of
+responses. This time I saw the response.
+
+Live sample:
+  "title": "Exhibit | Centering Philippine and Filipinx American Histories"
+  "group_title": "Library"
+  "location": "The Bancroft Library (corridor)"
+  "location_latitude": 37.872307
+  "event_types": ["Exhibits"]
+
+WHAT THE EVENTS TAB DOES
+- Groups events by day with Today and Tomorrow labeled
+- Range picker for today, this week, or everything upcoming
+- Category pills built from the real event_types values
+- Search across title, location and department
+- Detail sheet with full description, a small map when the venue has coordinates,
+  and a link to the official page
+
+The trick was that LiveWhale takes arguments as PATH SEGMENTS rather than query
+strings, and extra fields need response_fields. ?max=5 gets silently ignored,
+/max/5 works. That's why my first three attempts came back with 77KB of identical
+data.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok nice let's change some things around
+
+1) in the events tab, instead of "upcoming" can you say "near future"
+2) add another tab called library hours, and show images of each library and
+   their hours (this should be on the website)
+3) dining (this still sucks) ... i want to be able to pick the day and dining
+   hall location first, and then i want it to pull up the menu
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Three tabs now: Events, Dining, Libraries.
+
+Events range now reads "Near future".
+
+Dining is now a two-step flow. Landing screen has a Day picker and a Dining hall
+picker, then a View menu button. The hall list is hardcoded from Cal Dining's own
+site, so all eleven locations always appear whether or not the parser finds them.
+
+To be straight with you: the underlying parser is unchanged, so you may still only
+get real food for Clark.
+
+Libraries is a new tab. Hours come from Springshare LibCal, which I verified
+returns live JSON. Each library gets a card with a photo, a live open/closed dot,
+and a detail view with the full week where today is highlighted in gold.
+
+Two honest caveats. Berkeley's LibCal only publishes hours for a handful of
+libraries right now, since it's July and most are closed. Second, photos come
+from Wikipedia at runtime rather than hardcoded URLs.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok let's keep going
+
+1) make the app in dark mode
+2) for dining, make the dropdown include the other non dining hall locations, and
+   then remove the menus posted for today selector from the bottom
+3) for libraries, get the hours and images from here, they are all on this website
+   https://www.lib.berkeley.edu/hours
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+All three done.
+
+Dark mode is locked on regardless of the device setting. I also rebalanced the
+palette, because Berkeley Blue on a dark background is nearly invisible. Headings
+now use California Gold, buttons and selected chips use Founders Rock, and the
+deep blue is only used behind white text.
+
+Dining picker is one flat list of all eleven locations now. The nested sections I
+had were likely why you only saw the dining commons.
+
+Libraries got rewritten against the page you linked, and that page is much better
+than what I had. It's server-rendered with everything on it, so no LibCal, no
+Wikipedia. You now get all 28 locations with their real photos, live Open /
+Closing soon / Closed status, today's hours, address, a tappable phone number and
+a Google Maps link.
+
+I anchored the parser on styles/library_hours_image in the photo URLs and on
+/visit/ and /find/ links rather than on Drupal's CSS class names. Then I tested it
+against a fixture covering the awkward cases, and all five pass:
+
+  Art History/Classics Library   Open           11 a.m.-5 p.m.
+  Main (Gardner) Stacks          Open           9 a.m.-6 p.m.  - Cal ID required
+  Newspapers & Microforms        Closed         By appointment
+  Interlibrary Loan              Closing soon   10 a.m.-4 p.m.
+  Moffitt (temporarily closed)   not posted     -
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+im thinking of dropping libraries ... what should i do instead?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Before recommending anything I checked what actually has a live feed, since
+that's been the real constraint on this app. One thing stood out.
+
+THE RSF GYM HAS A LIVE OCCUPANCY COUNTER. RecWell's Weight Room Crowd Meter
+embeds a Density.io display with a public share token right in the page:
+
+  safe.density.io/#/displays/dsp_956223069054042646?token=shr_o69HxjQ0BYrY...
+
+There's a matching Cardio Equipment Usage Meter. That's real-time "how packed is
+the gym right now" data, which is the single most-checked thing in every campus
+app I know of. You'd check it before every workout. Libraries you check maybe
+twice a semester.
+
+Two other options worth weighing:
+
+Transit fits your original "all in one campus navigation" pitch best. AC Transit
+and Bear Transit real-time arrivals near campus. The catch is 511.org requires a
+free API key.
+
+Keep Libraries. Honestly it's the most polished thing in the app right now.
+Dropping working code because it's boring is a real cost.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+so basically
+1) make me be able to select the meal and then search
+2) replace libraries tab with RSF gym meter
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Both done.
+
+Dining now has three pickers on the first screen: Day, Location and Meal. The
+button says Search. It defaults the meal to whatever makes sense for the current
+time. If the hall has no menu for the meal you picked, it doesn't dead-end.
+
+Gym tab replaces Libraries. The live weight room meter is embedded directly
+rather than scraped, and that's a deliberate call. Density's underlying API isn't
+publicly documented, and I couldn't reach it from here to confirm a JSON endpoint.
+Given how the crime map and dining parser both went, I wasn't going to guess at
+another endpoint. Embedding the exact display RecWell embeds means the app shows
+whatever their own page shows, with nothing to break.
+
+Below the meter there's a Join the virtual line button (RecWell opens one at 95%
+capacity), plus links to the cardio meter, RSF hours and the address in Maps.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+ok we're really close all that's left is the dining hall
+
+for some reason if i select a meal, it doesnt show anything ... can you fix this?
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Found it, and it's not a code bug. Cal Dining's page right now only has this:
+
+  Cafe 3      Now Closed    Spring - Brunch, Spring - Dinner
+  Clark Kerr  Now Closed    Spring - Brunch, Spring - Dinner
+  Crossroads  Now Closed    Spring - Brunch, Spring - Dinner
+
+Three locations, two meals, all marked closed, and the menu is dated Sunday,
+May 10. It's summer, so there is no Breakfast and no Lunch anywhere. Picking
+either was always going to come back empty.
+
+WHAT I CHANGED
+Brunch now covers breakfast and lunch. Cal Dining collapses those into brunch on
+weekends and over summer, so asking for either shows the brunch menu with a line
+explaining the substitution.
+
+The results screen is no longer a dead end. If your exact pick has nothing, you
+get the meals that hall is serving as tappable rows, plus the other locations
+that are open.
+
+Worth knowing: this will look much healthier in late August.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+actually let's remove the meal option-just show the location and their main
+options for the day as long as there is a date checker and a location checker,
+that's all that matters
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+Meal picker is gone.
+
+Dining is now just Day and Location, then Search. The result screen shows every
+meal that location is serving that day as its own section, so brunch and dinner
+both appear without you choosing between them.
+
+If a location has nothing posted, you still get the list of locations that do,
+one tap away.
+
+
+-------------------------------------------------------------------------------
+JACOB
+-------------------------------------------------------------------------------
+and then when i go in instead of summer, summer, summer can you label it
+breakfast, lunch, and dinner in that order? this is the case for the dining halls
+(crossroads, clark kerr, and foothill) but the other ones may or may not have 3
+options ... if there are only 2 options, then just put breakfast and then
+lunch/dinner ... just a small labeling thing
+
+
+-------------------------------------------------------------------------------
+CLAUDE
+-------------------------------------------------------------------------------
+The "Summer" labels tell me something useful: Cal Dining's class attribute has
+multiple tokens and my parser was only reading the first one.
+
+Every case checks out:
+
+  Summer, Summer, Summer   ->  Breakfast, Lunch, Dinner
+  Summer, Summer           ->  Breakfast, Lunch/Dinner
+  Summer                   ->  All Day
+  Summer - Brunch, Dinner  ->  Brunch, Dinner
+  Breakfast, Lunch, Dinner ->  unchanged
+
+Two things happening here. The labels now fall back to position when Cal Dining's
+name is just a semester, exactly as you described, and each gets a matching icon.
+
+The "Summer" also pointed at a real bug. Cal Dining splits names across multiple
+CSS classes and my parser was only reading the first token, so "Summer Brunch"
+was being read as "Summer". It now joins all of them. That may be why halls were
+going missing too, since a location like "Clark Kerr Campus" would have been
+truncated the same way.
+
+Ordering is explicit rather than relying on sort stability, so when the real names
+come back in August the sections stay breakfast, lunch, dinner in that order.
+
+
+===============================================================================
+FINAL STATE
+===============================================================================
+
+FILES IN BearTracks/BearTracks/
+  BearTracksApp.swift    App entry point
+  ContentView.swift      TabView shell, dark mode locked on
+  Theme.swift            Berkeley Blue, California Gold, Founders Rock palette
+  EventsService.swift    LiveWhale JSON feed client
+  EventsView.swift       Campus events, grouped by day
+  DiningService.swift    Cal Dining HTML parser and hall catalogue
+  DiningView.swift       Day + location picker, then the menu
+  GymView.swift          Embedded Density live occupancy meter
+
+DATA SOURCES
+  Events    https://events.berkeley.edu/live/json/events   (verified, JSON)
+  Dining    https://dining.berkeley.edu/menus/             (HTML parsed)
+  Gym       Density SAFE display via recwell.berkeley.edu  (embedded)
+
+REMOVED ALONG THE WAY
+  Crime map, from Berkeley's Socrata open data portal. Returned 403 and could
+  not be verified.
+  Library hours, from lib.berkeley.edu. Worked, but replaced by the gym meter.
+
+THE RECURRING LESSON
+Every feature that failed, failed because the data source was assumed rather
+than verified. Every feature that worked, worked because the live response was
+inspected first. Check the endpoint before writing the parser.
+
+===============================================================================
