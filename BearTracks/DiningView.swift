@@ -24,6 +24,31 @@ final class DiningViewModel: ObservableObject {
         return period.items.filter { activeDiets.isSubset(of: $0.tags) }
     }
 
+    /// Dish-name fragments hidden from a hall's browsed menu — staples and
+    /// sides (bagels, yogurt, plain rice, …) that clutter the list. Matched
+    /// as case-insensitive substrings. Only applied to the hall menu browse,
+    /// not the cross-hall search, so these can still be searched for by name.
+    static let hiddenKeywords: [String] = [
+        "bagel", "cream", "capers", "oatmeal", "brown rice", "jasmine rice",
+        "sauteed mushroom vegetable blend", "yogurt", "seeds", "dressing",
+        "salad", "hummus", "mung bean", "sliced almond", "mini", "base",
+        "lettuce", "red beets", "carrots", "cucumbers", "grape tomato",
+        "quinoa", "cruton", "crouton", "vinegar", "balsamic", "vegan cheese",
+        "green olive", "butter", "granola", "cranberry", "flakes",
+        "basmati rice", "basil", "black olive", "olive oil", "pickle"
+    ]
+
+    static func isHidden(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        return hiddenKeywords.contains { lowered.contains($0) }
+    }
+
+    /// Items to show when browsing a hall's menu: the diet-filtered list with
+    /// staple sides hidden to cut clutter.
+    func displayItems(in period: MenuPeriod) -> [MenuItem] {
+        items(in: period).filter { !Self.isHidden($0.name) }
+    }
+
     /// Every dish across every hall whose name matches `query`, grouped by hall
     /// (dining commons first), honoring the active diet chips.
     func dishSections(matching query: String) -> [(hall: DiningHall, hits: [DishHit])] {
@@ -36,6 +61,51 @@ final class DiningViewModel: ObservableObject {
             var hits: [DishHit] = []
             for period in location.labeledPeriods {
                 for item in items(in: period.period) where item.name.lowercased().contains(q) {
+                    hits.append(DishHit(item: item, hall: hall, meal: period.label))
+                }
+            }
+            if !hits.isEmpty { sections.append((hall, hits)) }
+        }
+        return sections
+    }
+
+    // MARK: Notable items
+
+    /// Standout dishes worth surfacing at the top of the tab. Each entry is
+    /// matched loosely: a multi-word keyword only needs every word to appear
+    /// somewhere in the dish name, so "pesto pasta" catches "Penne Pasta with
+    /// Pesto" and "tri tip" catches both "Tri-Tip" and "TriTip".
+    static let notableKeywords: [String] = [
+        "baked pork bacon", "tri tip", "salmon", "lobster", "pesto", "alfredo", "fettucini", "marinara"
+    ]
+
+    /// Words that disqualify a dish even if it matches a notable keyword, so a
+    /// "salmon sandwich" or "pesto sauce" doesn't get surfaced as a standout.
+    static let notableExclusions: [String] = ["sandwich", "sauce", "bisque"]
+
+    static func isNotable(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        guard !notableExclusions.contains(where: { lowered.contains($0) }) else { return false }
+        return notableKeywords.contains { keyword in
+            keyword.split(separator: " ").allSatisfy { lowered.contains($0) }
+        }
+    }
+
+    /// Every notable dish on the selected day, across all halls, grouped by
+    /// hall (dining commons first, matching `DiningHall.all` order). Duplicates
+    /// of the same dish within a hall are collapsed by name + meal.
+    func notableSections() -> [(hall: DiningHall, hits: [DishHit])] {
+        var sections: [(DiningHall, [DishHit])] = []
+        // Only the residential dining commons (Crossroads, Café 3, Clark Kerr,
+        // Foothill); the retail cafés aren't where standout meals show up.
+        for hall in DiningHall.all where hall.isResidential {
+            guard let location = location(for: hall) else { continue }
+            var hits: [DishHit] = []
+            var seen = Set<String>()
+            for period in location.labeledPeriods {
+                for item in period.period.items where Self.isNotable(item.name) {
+                    let key = "\(item.name.lowercased())|\(period.label)"
+                    guard seen.insert(key).inserted else { continue }
                     hits.append(DishHit(item: item, hall: hall, meal: period.label))
                 }
             }
@@ -62,6 +132,13 @@ final class DiningViewModel: ObservableObject {
     var hallsWithMenus: [DiningHall] {
         DiningHall.all.filter { hall in locations.contains { hall.matches($0.name) } }
     }
+
+    /// The residential dining commons, shown as their own cards.
+    var diningCommons: [DiningHall] { DiningHall.all.filter(\.isResidential) }
+
+    /// Everything else — the retail cafés and markets — grouped under a single
+    /// "Campus Eateries" entry.
+    var campusEateries: [DiningHall] { DiningHall.all.filter { !$0.isResidential } }
 
     // MARK: Dates
 
@@ -113,6 +190,7 @@ struct DishHit: Identifiable, Hashable {
 struct DiningView: View {
     @StateObject private var model = DiningViewModel()
     @State private var showingMenu = false
+    @State private var showingEateries = false
     @State private var showingDiagnostics = false
     @State private var searchText = ""
 
@@ -153,6 +231,9 @@ struct DiningView: View {
             .navigationDestination(isPresented: $showingMenu) {
                 MenuResultView(model: model)
             }
+            .navigationDestination(isPresented: $showingEateries) {
+                CampusEateriesView(model: model, showMenu: $showingMenu)
+            }
             .sheet(isPresented: $showingDiagnostics) {
                 DiagnosticsView(text: model.diagnostics.summary)
             }
@@ -178,8 +259,10 @@ struct DiningView: View {
             }
         }
 
+        notableSection
+
         Section {
-            ForEach(DiningHall.all) { hall in
+            ForEach(model.diningCommons) { hall in
                 Button {
                     model.selectedHall = hall
                     showingMenu = true
@@ -188,9 +271,96 @@ struct DiningView: View {
                 }
                 .buttonStyle(.plain)
             }
-        } footer: {
-            Text("Tap a hall to see every meal it's serving on \(model.dateLabel.lowercased()).")
+
+            Button {
+                showingEateries = true
+            } label: {
+                eateriesCard
+            }
+            .buttonStyle(.plain)
         }
+    }
+
+    // MARK: Campus eateries card
+
+    /// A single entry standing in for every retail café and market, tapped to
+    /// open the full list.
+    private var eateriesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DiningImage(url: nil, assetName: "CampusEateriesBanner", height: 130)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Campus Restaurants")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(eateriesSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// A short teaser of the eateries, e.g. "Golden Bear Café, Brown's & 5 more".
+    private var eateriesSubtitle: String {
+        let names = model.campusEateries.map(\.name)
+        guard names.count > 2 else { return names.joined(separator: ", ") }
+        return "\(names[0]), \(names[1]) & \(names.count - 2) more"
+    }
+
+    // MARK: Notable items
+
+    /// Standout dishes (steak, salmon, lobster, …) across every hall for the
+    /// selected day, shown above the hall list. Hidden entirely when nothing
+    /// notable is being served.
+    @ViewBuilder
+    private var notableSection: some View {
+        let sections = model.notableSections()
+        if !sections.isEmpty {
+            Section {
+                ForEach(sections, id: \.hall.id) { section in
+                    ForEach(section.hits) { hit in
+                        Button {
+                            model.selectedHall = hit.hall
+                            showingMenu = true
+                        } label: {
+                            notableRow(hit)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Label("Notable Dining Hall Dishes", systemImage: "star.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.californiaGold)
+                    .textCase(nil)
+            }
+        }
+    }
+
+    private func notableRow(_ hit: DishHit) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(hit.item.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                Text("\(hit.hall.name) · \(hit.meal)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 
     // MARK: Cross-hall search
@@ -286,6 +456,63 @@ struct DiningView: View {
     }
 }
 
+// MARK: - Campus eateries
+
+/// The full list of retail cafés and markets, reached from the single
+/// "Campus Eateries" card on the Dining screen. Tapping one opens its menu.
+struct CampusEateriesView: View {
+    @ObservedObject var model: DiningViewModel
+    @Binding var showMenu: Bool
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(model.campusEateries) { hall in
+                    Button {
+                        model.selectedHall = hall
+                        showMenu = true
+                    } label: {
+                        card(for: hall)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .navigationTitle("Campus Restaurants")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func card(for hall: DiningHall) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DiningImage(url: hall.imageURL, assetName: hall.assetName, height: 130)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hall.name)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle(for: hall))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func subtitle(for hall: DiningHall) -> String {
+        if model.isLoading && model.locations.isEmpty { return "Loading menu…" }
+        if let summary = model.location(for: hall)?.mealSummary, !summary.isEmpty {
+            return summary
+        }
+        return "No menu posted"
+    }
+}
+
 // MARK: - Image
 
 /// A hall photo cropped to a uniform size, mirroring the Library tab's cards.
@@ -336,6 +563,28 @@ struct MenuResultView: View {
 
     private var periods: [DiningLocation.LabeledPeriod] { model.labeledPeriods }
 
+    /// The meals that actually have something to show once staples are hidden
+    /// and diet filters applied, each paired with its visible items. Filtering
+    /// here — rather than inside the `ForEach` — keeps SwiftUI from leaving a
+    /// blank ghost section behind when a meal's items are all filtered out.
+    private var visiblePeriods: [(entry: DiningLocation.LabeledPeriod, items: [MenuItem])] {
+        periods.compactMap { entry in
+            let items = model.displayItems(in: entry.period)
+            return items.isEmpty ? nil : (entry, items)
+        }
+    }
+
+    /// A fingerprint of exactly what the menu list is showing. Applied as the
+    /// List's `.id`, it forces a clean rebuild whenever the hall, date, or the
+    /// filtered item set changes — so SwiftUI never diffs a shrinking `ForEach`
+    /// and leaves phantom blank rows where hidden items used to be.
+    private var menuSignature: String {
+        let shape = visiblePeriods
+            .map { "\($0.entry.id):\($0.items.count)" }
+            .joined(separator: ",")
+        return "\(model.selectedHall.id)|\(model.selectedDate.timeIntervalSince1970)|\(shape)"
+    }
+
     var body: some View {
         Group {
             if model.isLoading {
@@ -373,25 +622,22 @@ struct MenuResultView: View {
                     .listRowBackground(Color.clear)
             }
 
-            ForEach(periods) { entry in
-                let items = model.items(in: entry.period)
-                if !items.isEmpty {
-                    Section {
-                        ForEach(items) { item in
-                            MenuItemRow(item: item)
-                        }
-                    } header: {
-                        HStack(spacing: 6) {
-                            Image(systemName: entry.symbol)
-                            Text(entry.label)
-                            Spacer()
-                            Text("\(items.count)")
-                                .foregroundStyle(.secondary)
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.heading)
-                        .textCase(nil)
+            ForEach(visiblePeriods, id: \.entry.id) { entry, items in
+                Section {
+                    ForEach(items) { item in
+                        MenuItemRow(item: item)
                     }
+                } header: {
+                    HStack(spacing: 6) {
+                        Image(systemName: entry.symbol)
+                        Text(entry.label)
+                        Spacer()
+                        Text("\(items.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.heading)
+                    .textCase(nil)
                 }
             }
 
@@ -401,12 +647,12 @@ struct MenuResultView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .id(menuSignature)
     }
 
     /// True when a filter is on and it's hidden every dish in every period.
     private var noItemsAfterFilter: Bool {
-        !model.activeDiets.isEmpty
-            && periods.allSatisfy { model.items(in: $0.period).isEmpty }
+        !model.activeDiets.isEmpty && visiblePeriods.isEmpty
     }
 
     private var dietFilterBar: some View {

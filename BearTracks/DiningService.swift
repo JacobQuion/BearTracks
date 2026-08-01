@@ -407,35 +407,36 @@ struct DiningHall: Identifiable, Hashable {
 
 struct DiningService {
 
-    private static let menusPath = "https://dining.berkeley.edu/menus/"
+    /// The public `/menus/` page is rendered server-side for *today only*. Its
+    /// date dropdown doesn't reload the page with a query parameter — it POSTs
+    /// to WordPress's admin-ajax with `action=cald_filter_xml` and swaps in the
+    /// returned menu fragment. So to read any other day we call that endpoint
+    /// directly; sending a date in the page URL is silently ignored.
+    private static let ajaxPath = "https://dining.berkeley.edu/wp-admin/admin-ajax.php"
 
-    /// Cal Dining's menus page takes a date. We send it under the couple of
-    /// parameter names their front end has used; extras are ignored harmlessly.
-    static func menusURL(for date: Date) -> URL {
-        var components = URLComponents(string: menusPath)!
+    /// Cal Dining's date filter keys the day as a bare `yyyyMMdd` token.
+    static func dateToken(for date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        let text = f.string(from: date)
-
-        if !Calendar.current.isDateInToday(date) {
-            components.queryItems = [
-                URLQueryItem(name: "date", value: text),
-                URLQueryItem(name: "menu_date", value: text)
-            ]
-        }
-        return components.url ?? URL(string: menusPath)!
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: date)
     }
 
     static func fetchMenus(for date: Date = Date()) async throws -> DiningFetchResult {
-        let url = menusURL(for: date)
+        let token = dateToken(for: date)
+        let url = URL(string: ajaxPath)!
         var request = URLRequest(url: url)
+        request.httpMethod = "POST"
         request.timeoutInterval = 30
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         // Some WordPress front ends serve a stripped page to unknown clients.
         request.setValue(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
             forHTTPHeaderField: "User-Agent"
         )
+        // Empty location & mealperiod ask for every hall and every meal that day.
+        request.httpBody = "action=cald_filter_xml&location=&mealperiod=&date=\(token)"
+            .data(using: .utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -452,7 +453,7 @@ struct DiningService {
         let locations = parse(html: html)
 
         var diagnostics = DiningDiagnostics()
-        diagnostics.requestedURL = url.absoluteString
+        diagnostics.requestedURL = "\(url.absoluteString)  (cald_filter_xml, date=\(token))"
         diagnostics.statusCode = status
         diagnostics.byteCount = data.count
         diagnostics.locationMarkers = occurrences(of: "location-name", in: html)
