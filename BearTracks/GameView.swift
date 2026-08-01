@@ -12,8 +12,12 @@ import SwiftUI
 struct GameView: View {
     /// One tile of the 3x3 grid.
     private let tileCount = 9
+    /// Background for a tile the player mistakenly tapped (Stanford tile).
+    private static let stanfordRed = Color(red: 0.78, green: 0.12, blue: 0.12)
+    /// The deep blue of the Cal logo, sampled from its artwork.
+    private static let calBlue = Color(red: 0.075, green: 0.157, blue: 0.447)
     /// How long a round lasts, in seconds.
-    private let roundLength = 20
+    private let roundLength = 15
 
     @State private var activeTile: Int? = nil
     @State private var score = 0
@@ -22,6 +26,8 @@ struct GameView: View {
     @State private var isPlaying = false
     /// Briefly flashes the tile the player just tapped for feedback.
     @State private var lastHitTile: Int? = nil
+    /// Briefly flashes red on the tile the player tapped by mistake.
+    @State private var missedTile: Int? = nil
     /// Oski's party, shown after a round that sets a new personal best.
     @State private var showCelebration = false
 
@@ -43,7 +49,7 @@ struct GameView: View {
                 controlButton
             }
             .padding(16)
-            .navigationTitle("Catch Oski")
+            .navigationTitle("Cal Whac-A-Mole!")
             .navigationBarTitleDisplayMode(.inline)
             .overlay {
                 if showCelebration {
@@ -74,7 +80,7 @@ struct GameView: View {
                     .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
 
-                Text("Go Bears! 🐻")
+                Text("Go Bears!")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -137,21 +143,36 @@ struct GameView: View {
     private func tile(at index: Int) -> some View {
         let isActive = activeTile == index
         let isHit = lastHitTile == index
+        let isMissed = missedTile == index
 
         return RoundedRectangle(cornerRadius: 14)
-            .fill(isActive ? Theme.control : Theme.card)
+            .fill(isMissed ? Self.stanfordRed : (isActive ? Theme.control : Theme.card))
             .aspectRatio(1, contentMode: .fit)
             .overlay(
-                Image(systemName: isActive ? "pawprint.fill" : "pawprint")
-                    .font(.system(size: 34))
-                    .foregroundStyle(isActive ? Theme.californiaGold : Color.white.opacity(0.06))
-                    .scaleEffect(isHit ? 1.3 : 1)
+                Group {
+                    if isActive {
+                        // Fill the whole tile with the Cal logo (cropped to fit).
+                        Image("CalLogo")
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if isMissed {
+                        Image("StanfordLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(12)
+                    }
+                }
+                .scaleEffect(isHit ? 1.3 : 1)
             )
+            // Clip the whole tile so a filled logo can't bleed into its neighbors.
+            .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(Color.white.opacity(0.06), lineWidth: 1)
             )
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isActive)
+            .animation(.easeOut(duration: 0.2), value: isMissed)
             .onTapGesture { tap(index) }
     }
 
@@ -165,7 +186,7 @@ struct GameView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Theme.control, in: RoundedRectangle(cornerRadius: 12))
+                .background(Self.calBlue, in: RoundedRectangle(cornerRadius: 12))
                 .foregroundStyle(.white)
         }
     }
@@ -173,11 +194,21 @@ struct GameView: View {
     // MARK: Game logic
 
     private func tap(_ index: Int) {
-        guard isPlaying, activeTile == index else { return }
-        score += 1
-        lastHitTile = index
-        activeTile = nil
-        withAnimation { lastHitTile = nil }
+        guard isPlaying else { return }
+        if activeTile == index {
+            score += 1
+            lastHitTile = index
+            activeTile = nil
+            withAnimation { lastHitTile = nil }
+        } else {
+            // Tapping an empty tile is a mistake: flash it red and cost a point.
+            score -= 1
+            missedTile = index
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                if missedTile == index { missedTile = nil }
+            }
+        }
     }
 
     private func startRound() {
@@ -204,8 +235,8 @@ struct GameView: View {
     /// Drives the countdown and moves Oski around until the round ends.
     private func runRound() async {
         var elapsedMillis = 0
-        // Oski jumps to a new tile every ~700ms.
-        let hopMillis = 700
+        // Oski jumps to a new tile every ~600ms.
+        let hopMillis = 600
         var untilHop = 0
 
         while isPlaying && timeRemaining > 0 {
@@ -248,12 +279,13 @@ private struct BouncingOski: View {
     }
 }
 
-/// A shower of colorful party confetti falling behind the score card.
+/// A gentle drift of Berkeley-blue-and-gold streamers, echoing the curly
+/// ribbons and specks on the admit letter.
 private struct ConfettiView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                ForEach(0..<60, id: \.self) { _ in
+                ForEach(0..<40, id: \.self) { _ in
                     ConfettiPiece(bounds: geo.size)
                 }
             }
@@ -263,45 +295,76 @@ private struct ConfettiView: View {
     }
 }
 
+/// A loose vertical squiggle that reads as a curled paper streamer.
+private struct CurlShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let h = rect.height
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.midY),
+            control1: CGPoint(x: rect.maxX, y: h * 0.15),
+            control2: CGPoint(x: rect.minX, y: h * 0.35)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.maxY),
+            control1: CGPoint(x: rect.maxX, y: h * 0.65),
+            control2: CGPoint(x: rect.minX, y: h * 0.85)
+        )
+        return path
+    }
+}
+
 private struct ConfettiPiece: View {
     let bounds: CGSize
 
-    /// Berkeley blue and gold, in a couple of shades each.
+    /// Berkeley blue and gold, as on the admit letter.
     private static let palette: [Color] = [
-        Theme.californiaGold, Theme.californiaGold, Theme.berkeleyBlue,
-        Theme.foundersRock, Theme.lawrence
+        Theme.californiaGold, Theme.californiaGold, Theme.berkeleyBlue, Theme.foundersRock
     ]
 
-    // Fixed per piece so each ribbon tumbles its own way.
+    // Fixed per piece so each ribbon drifts its own way.
     private let color = palette.randomElement()!
+    // Roughly a third are little dots; the rest are curly ribbons.
+    private let isDot = Double.random(in: 0...1) < 0.35
     private let xFraction = CGFloat.random(in: 0...1)
-    private let width = CGFloat.random(in: 6...11)
-    private let height = CGFloat.random(in: 10...18)
-    private let delay = Double.random(in: 0...2.0)
-    private let duration = Double.random(in: 3.0...5.0)
-    private let spin = Double.random(in: -540...540)
+    private let dotSize = CGFloat.random(in: 4...8)
+    private let ribbonW = CGFloat.random(in: 10...16)
+    private let ribbonH = CGFloat.random(in: 26...44)
+    private let delay = Double.random(in: 0...2.5)
+    private let duration = Double.random(in: 4.0...6.5)
+    private let spin = Double.random(in: -300...300)
     private let tilt = Double.random(in: -45...45)
+    private let sway = CGFloat.random(in: -30...30)
 
     @State private var falling = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(color)
-            .frame(width: width, height: height)
-            .position(
-                x: xFraction * bounds.width,
-                y: falling ? bounds.height + 60 : -60
-            )
-            .rotationEffect(.degrees(falling ? spin : tilt))
-            .onAppear {
-                withAnimation(
-                    .easeIn(duration: duration)
-                        .repeatForever(autoreverses: false)
-                        .delay(delay)
-                ) {
-                    falling = true
-                }
+        Group {
+            if isDot {
+                Circle()
+                    .fill(color)
+                    .frame(width: dotSize, height: dotSize)
+            } else {
+                CurlShape()
+                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .frame(width: ribbonW, height: ribbonH)
             }
+        }
+        .position(
+            x: xFraction * bounds.width + (falling ? sway : 0),
+            y: falling ? bounds.height + 60 : -60
+        )
+        .rotationEffect(.degrees(falling ? spin : tilt))
+        .onAppear {
+            withAnimation(
+                .easeIn(duration: duration)
+                    .repeatForever(autoreverses: false)
+                    .delay(delay)
+            ) {
+                falling = true
+            }
+        }
     }
 }
 
