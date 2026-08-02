@@ -17,7 +17,7 @@ struct GameView: View {
     /// The deep blue of the Cal logo, sampled from its artwork.
     private static let calBlue = Color(red: 0.075, green: 0.157, blue: 0.447)
     /// How long a round lasts, in seconds.
-    private let roundLength = 15
+    private let roundLength = 10
 
     @State private var activeTile: Int? = nil
     @State private var score = 0
@@ -261,14 +261,15 @@ struct GameView: View {
 
 // MARK: - Celebration pieces
 
-/// A big Oski pawprint that gently pulses, the star of the party.
+/// A big Cal logo that gently pulses, the star of the party.
 private struct BouncingOski: View {
     @State private var pulse = false
 
     var body: some View {
-        Image(systemName: "pawprint.fill")
-            .font(.system(size: 88))
-            .foregroundStyle(Theme.californiaGold)
+        Image("CalLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 88, height: 88)
             .scaleEffect(pulse ? 1.12 : 0.9)
             .rotationEffect(.degrees(pulse ? 6 : -6))
             .onAppear {
@@ -279,8 +280,7 @@ private struct BouncingOski: View {
     }
 }
 
-/// A gentle drift of Berkeley-blue-and-gold streamers, echoing the curly
-/// ribbons and specks on the admit letter.
+/// A gentle downward fall of little Berkeley-blue-and-gold confetti bits.
 private struct ConfettiView: View {
     var body: some View {
         GeometryReader { geo in
@@ -295,26 +295,6 @@ private struct ConfettiView: View {
     }
 }
 
-/// A loose vertical squiggle that reads as a curled paper streamer.
-private struct CurlShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let h = rect.height
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.midX, y: rect.midY),
-            control1: CGPoint(x: rect.maxX, y: h * 0.15),
-            control2: CGPoint(x: rect.minX, y: h * 0.35)
-        )
-        path.addCurve(
-            to: CGPoint(x: rect.midX, y: rect.maxY),
-            control1: CGPoint(x: rect.maxX, y: h * 0.65),
-            control2: CGPoint(x: rect.minX, y: h * 0.85)
-        )
-        return path
-    }
-}
-
 private struct ConfettiPiece: View {
     let bounds: CGSize
 
@@ -323,14 +303,14 @@ private struct ConfettiPiece: View {
         Theme.californiaGold, Theme.californiaGold, Theme.berkeleyBlue, Theme.foundersRock
     ]
 
-    // Fixed per piece so each ribbon drifts its own way.
+    // Fixed per piece so each bit drifts its own way.
     private let color = palette.randomElement()!
-    // Roughly a third are little dots; the rest are curly ribbons.
-    private let isDot = Double.random(in: 0...1) < 0.35
+    // Little bits: about half tiny dots, half small flecks.
+    private let isDot = Double.random(in: 0...1) < 0.5
     private let xFraction = CGFloat.random(in: 0...1)
     private let dotSize = CGFloat.random(in: 4...8)
-    private let ribbonW = CGFloat.random(in: 10...16)
-    private let ribbonH = CGFloat.random(in: 26...44)
+    private let flakeW = CGFloat.random(in: 5...9)
+    private let flakeH = CGFloat.random(in: 4...7)
     private let delay = Double.random(in: 0...2.5)
     private let duration = Double.random(in: 4.0...6.5)
     private let spin = Double.random(in: -300...300)
@@ -346,9 +326,9 @@ private struct ConfettiPiece: View {
                     .fill(color)
                     .frame(width: dotSize, height: dotSize)
             } else {
-                CurlShape()
-                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .frame(width: ribbonW, height: ribbonH)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color)
+                    .frame(width: flakeW, height: flakeH)
             }
         }
         .position(
