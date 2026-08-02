@@ -148,7 +148,9 @@ struct GymView: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
+                    // Matches the game tab's "Start round" Berkeley-blue button.
+                    .background(Color(red: 0.075, green: 0.157, blue: 0.447),
+                                in: RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(.white)
             }
         }
