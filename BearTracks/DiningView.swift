@@ -16,6 +16,27 @@ final class DiningViewModel: ObservableObject {
     @Published var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @Published var selectedHall: DiningHall = DiningHall.all[0]
 
+    /// Diet chips the user requires; a dish must carry every one of them.
+    @Published var activeDiets: Set<DietaryTag> = []
+
+    /// Allergens the user wants to steer clear of; any dish carrying one is
+    /// hidden.
+    @Published var avoidAllergens: Set<DietaryTag> = []
+
+    /// The diet filters offered, shown as fixed buttons.
+    static let dietFilters: [DietaryTag] = [.vegan, .vegetarian, .halal, .kosher]
+
+    /// The allergen filters offered ("No …"), shown as fixed buttons.
+    static let allergenFilters: [DietaryTag] = [.dairy, .peanut]
+
+    var hasActiveFilters: Bool { !activeDiets.isEmpty || !avoidAllergens.isEmpty }
+
+    /// Whether a dish satisfies the active diet requirements and carries none
+    /// of the avoided allergens.
+    func passesFilters(_ item: MenuItem) -> Bool {
+        activeDiets.isSubset(of: item.tags) && item.tags.isDisjoint(with: avoidAllergens)
+    }
+
     /// Dish-name fragments hidden from a hall's browsed menu — staples and
     /// sides (bagels, yogurt, plain rice, …) that clutter the list. Matched
     /// as case-insensitive substrings. Only applied to the hall menu browse,
@@ -38,9 +59,10 @@ final class DiningViewModel: ObservableObject {
     }
 
     /// Items to show when browsing a hall's menu: the period's dishes with
-    /// staple sides hidden to cut clutter.
+    /// staple sides hidden to cut clutter and the active diet/allergen filters
+    /// applied.
     func displayItems(in period: MenuPeriod) -> [MenuItem] {
-        period.items.filter { !Self.isHidden($0.name) }
+        period.items.filter { !Self.isHidden($0.name) && passesFilters($0) }
     }
 
     /// Every dish across every hall whose name matches `query`, grouped by hall
@@ -198,6 +220,9 @@ struct DiningView: View {
     @State private var showingDiagnostics = false
     @State private var searchText = ""
 
+    /// Shared app-wide appearance setting, toggled from the top-right menu.
+    @AppStorage("isDarkMode") private var isDarkMode = true
+
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -218,6 +243,12 @@ struct DiningView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button {
+                            isDarkMode.toggle()
+                        } label: {
+                            Label(isDarkMode ? "Light Mode" : "Dark Mode",
+                                  systemImage: isDarkMode ? "sun.max" : "moon")
+                        }
                         Button {
                             Task { await model.load() }
                         } label: {
@@ -395,6 +426,14 @@ struct DiningView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.californiaGold)
                 .textCase(nil)
+        } footer: {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle")
+                Text("Cal Dining: \"menus are subject to change.\"")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -629,7 +668,9 @@ struct MenuResultView: View {
         let shape = visiblePeriods
             .map { "\($0.entry.id):\($0.items.count)" }
             .joined(separator: ",")
-        return "\(model.selectedHall.id)|\(model.selectedDate.timeIntervalSince1970)|\(shape)"
+        let filters = model.activeDiets.map(\.rawValue).sorted().joined(separator: "+")
+            + "/" + model.avoidAllergens.map(\.rawValue).sorted().joined(separator: "+")
+        return "\(model.selectedHall.id)|\(model.selectedDate.timeIntervalSince1970)|\(filters)|\(shape)"
     }
 
     var body: some View {
@@ -663,7 +704,24 @@ struct MenuResultView: View {
 
     private var menuList: some View {
         List {
-            TruncationNotice()
+            Section {
+                filterBar
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 2, trailing: 12))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                TruncationNoticeRow()
+                    .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 6, trailing: 12))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } header: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                    Text("Filters")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.heading)
+                .textCase(nil)
+            }
 
             ForEach(visiblePeriods, id: \.entry.id) { entry, items in
                 Section {
@@ -680,8 +738,71 @@ struct MenuResultView: View {
                     .textCase(nil)
                 }
             }
+
+            if model.hasActiveFilters && visiblePeriods.isEmpty {
+                Text("Nothing here matches those filters.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
         .id(menuSignature)
+    }
+
+    // MARK: Filters
+
+    private static let filterColumns = Array(
+        repeating: GridItem(.flexible(), spacing: 8), count: 3
+    )
+
+    private static let avoidRed = Color(red: 0.78, green: 0.22, blue: 0.22)
+
+    /// A fixed grid of six always-visible filter buttons: diet buttons narrow
+    /// the menu to dishes that carry the tag; "No …" allergen buttons hide any
+    /// dish that carries the tag.
+    private var filterBar: some View {
+        LazyVGrid(columns: Self.filterColumns, spacing: 8) {
+            ForEach(DiningViewModel.dietFilters) { diet in
+                filterButton(diet.label, symbol: diet.symbol,
+                             isOn: model.activeDiets.contains(diet),
+                             onColor: .green) {
+                    toggle(diet, in: \.activeDiets)
+                }
+            }
+            ForEach(DiningViewModel.allergenFilters) { allergen in
+                filterButton("No \(allergen.label)", symbol: "nosign",
+                             isOn: model.avoidAllergens.contains(allergen),
+                             onColor: Self.avoidRed) {
+                    toggle(allergen, in: \.avoidAllergens)
+                }
+            }
+        }
+    }
+
+    private func toggle(_ tag: DietaryTag,
+                        in keyPath: ReferenceWritableKeyPath<DiningViewModel, Set<DietaryTag>>) {
+        if model[keyPath: keyPath].contains(tag) {
+            model[keyPath: keyPath].remove(tag)
+        } else {
+            model[keyPath: keyPath].insert(tag)
+        }
+    }
+
+    private func filterButton(_ text: String, symbol: String, isOn: Bool,
+                              onColor: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 10))
+                Text(text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .font(.subheadline.weight(.medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(isOn ? onColor : Color.primary.opacity(0.10)))
+            .foregroundStyle(isOn ? .white : .primary)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Empty
@@ -775,19 +896,27 @@ struct MenuResultView: View {
 struct TruncationNotice: View {
     var body: some View {
         Section {
-            HStack(spacing: 4) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.californiaGold)
-                Text("Staples like yogurt and salads are hidden for brevity.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+            TruncationNoticeRow()
         }
         .listRowBackground(Color.clear)
+    }
+}
+
+/// The bare notice row, so it can also sit inside another section (e.g. right
+/// under the filter buttons) without the extra inter-section spacing.
+struct TruncationNoticeRow: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.californiaGold)
+            Text("Staples like yogurt and salads are hidden for brevity.")
+                .font(.system(size: 12.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
