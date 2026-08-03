@@ -31,15 +31,41 @@ enum RSF {
 
 // MARK: - Web view
 
+/// Whether the embedded meter page reached the network and loaded.
+enum MeterLoadState {
+    case loading, loaded, failed
+}
+
 struct MeterWebView: UIViewRepresentable {
     let url: URL
     /// Bumping this from the parent triggers a reload.
     var reloadCount: Int
+    /// Reported back so the parent can show a graceful note on failure.
+    @Binding var loadState: MeterLoadState
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: MeterWebView
         var lastReloadCount = 0
+
+        init(_ parent: MeterWebView) { self.parent = parent }
+
+        /// Delegate callbacks can land mid-update, so bounce state changes to
+        /// the next runloop tick to avoid "modifying state during view update".
+        private func report(_ state: MeterLoadState) {
+            DispatchQueue.main.async { self.parent.loadState = state }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            report(.loaded)
+        }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            report(.failed)
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            report(.failed)
+        }
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -47,6 +73,7 @@ struct MeterWebView: UIViewRepresentable {
         configuration.allowsInlineMediaPlayback = true
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
@@ -58,8 +85,10 @@ struct MeterWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.parent = self
         guard context.coordinator.lastReloadCount != reloadCount else { return }
         context.coordinator.lastReloadCount = reloadCount
+        DispatchQueue.main.async { self.loadState = .loading }
         webView.load(URLRequest(url: url))
     }
 }
