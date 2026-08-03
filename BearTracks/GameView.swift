@@ -12,8 +12,8 @@ import SwiftUI
 struct GameView: View {
     /// One tile of the 3x3 grid.
     private let tileCount = 9
-    /// Background for a tile the player mistakenly tapped (Stanford tile).
-    private static let stanfordRed = Color(red: 0.78, green: 0.12, blue: 0.12)
+    /// Background for a tile the player mistakenly tapped.
+    private static let missRed = Color(red: 0.78, green: 0.12, blue: 0.12)
     /// The deep blue of the Cal logo, sampled from its artwork.
     private static let calBlue = Color(red: 0.075, green: 0.157, blue: 0.447)
     /// How long a round lasts, in seconds.
@@ -49,7 +49,7 @@ struct GameView: View {
                 controlButton
             }
             .padding(16)
-            .navigationTitle("Cal Whac-A-Mole!")
+            .navigationTitle("Oski Whac-A-Mole!")
             .navigationBarTitleDisplayMode(.inline)
             .overlay {
                 if showCelebration {
@@ -146,21 +146,16 @@ struct GameView: View {
         let isMissed = missedTile == index
 
         return RoundedRectangle(cornerRadius: 14)
-            .fill(isMissed ? Self.stanfordRed : (isActive ? Theme.control : Theme.card))
+            .fill(isMissed ? Self.missRed : (isActive ? Theme.control : Theme.card))
             .aspectRatio(1, contentMode: .fit)
             .overlay(
                 Group {
                     if isActive {
-                        // Fill the whole tile with the Cal logo (cropped to fit).
-                        Image("CalLogo")
+                        // Fill the whole tile with Oski (cropped to fit).
+                        Image("Oski")
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if isMissed {
-                        Image("StanfordLogo")
-                            .resizable()
-                            .scaledToFit()
-                            .padding(12)
                     }
                 }
                 .scaleEffect(isHit ? 1.3 : 1)
