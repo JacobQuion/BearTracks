@@ -256,15 +256,17 @@ struct GameView: View {
 
 // MARK: - Celebration pieces
 
-/// A big Cal logo that gently pulses, the star of the party.
+/// A big photo of Oski that gently pulses, the star of the party.
 private struct BouncingOski: View {
     @State private var pulse = false
 
     var body: some View {
-        Image("CalLogo")
+        Image("Oski")
             .resizable()
-            .scaledToFit()
-            .frame(width: 88, height: 88)
+            .scaledToFill()
+            .frame(width: 96, height: 96)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Theme.californiaGold, lineWidth: 3))
             .scaleEffect(pulse ? 1.12 : 0.9)
             .rotationEffect(.degrees(pulse ? 6 : -6))
             .onAppear {
