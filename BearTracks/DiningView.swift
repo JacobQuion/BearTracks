@@ -100,8 +100,13 @@ final class DiningViewModel: ObservableObject {
     /// "salmon sandwich" or "pesto sauce" doesn't get surfaced as a standout.
     static let notableExclusions: [String] = ["sandwich", "sauce", "bisque", "meatball"]
 
+    /// Dishes that are always notable, even if they contain an excluded word
+    /// (e.g. "Chicken Alfredo Sauce" carries "sauce" but is a real entrée).
+    static let notableAllowlist: [String] = ["chicken alfredo sauce"]
+
     static func isNotable(_ name: String) -> Bool {
         let lowered = name.lowercased()
+        if notableAllowlist.contains(where: { lowered.contains($0) }) { return true }
         guard !notableExclusions.contains(where: { lowered.contains($0) }) else { return false }
         return notableKeywords.contains { keyword in
             keyword.split(separator: " ").allSatisfy { lowered.contains($0) }
@@ -647,6 +652,10 @@ struct DiningImage: View {
 struct MenuResultView: View {
     @ObservedObject var model: DiningViewModel
 
+    /// Meal sections the user has expanded. Empty means everything starts
+    /// collapsed; tapping a meal header toggles its id in here.
+    @State private var expandedMeals: Set<UUID> = []
+
     private var periods: [DiningLocation.LabeledPeriod] { model.labeledPeriods }
 
     /// The meals that actually have something to show once staples are hidden
@@ -724,18 +733,35 @@ struct MenuResultView: View {
             }
 
             ForEach(visiblePeriods, id: \.entry.id) { entry, items in
+                let isExpanded = expandedMeals.contains(entry.id)
                 Section {
-                    ForEach(items) { item in
-                        MenuItemRow(item: item)
+                    if isExpanded {
+                        ForEach(items) { item in
+                            MenuItemRow(item: item)
+                        }
                     }
                 } header: {
-                    HStack(spacing: 6) {
-                        Image(systemName: entry.symbol)
-                        Text(entry.label)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            if isExpanded { expandedMeals.remove(entry.id) }
+                            else { expandedMeals.insert(entry.id) }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: entry.symbol)
+                            Text(entry.label)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.heading)
+                        .textCase(nil)
+                        .contentShape(Rectangle())
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.heading)
-                    .textCase(nil)
+                    .buttonStyle(.plain)
                 }
             }
 
