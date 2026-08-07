@@ -25,7 +25,15 @@ enum Theme {
     // Semantic roles, so intent is obvious at the call site.
     static let heading = californiaGold
     static let control = foundersRock
-    static let card = Color(red: 0.11, green: 0.12, blue: 0.14)
+
+    /// Card surface that adapts to the chosen appearance: the original dark
+    /// charcoal in dark mode, and a soft light gray in light mode so cards read
+    /// as raised panels instead of black blocks on a white page.
+    static let card = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)
+            : UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1)
+    })
 }
 
 enum Campus {
