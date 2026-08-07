@@ -188,7 +188,10 @@ struct EventsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(
-                    Capsule().fill(isSelected ? Theme.control : Color.primary.opacity(0.10))
+                    // Matches the gym tab's "Join the virtual line" Berkeley-blue button.
+                    Capsule().fill(isSelected
+                        ? Color(red: 0.075, green: 0.157, blue: 0.447)
+                        : Color.primary.opacity(0.10))
                 )
                 .foregroundStyle(isSelected ? .white : .primary)
         }
